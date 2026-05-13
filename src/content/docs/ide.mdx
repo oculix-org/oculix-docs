@@ -1,0 +1,134 @@
+---
+title: "Basic information and quick start"
+description: "Setting up and using the SikuliX IDE — global options, partial script execution, plain Python and text file editing."
+---
+
+import { Aside, Badge, Card, CardGrid, FileTree, LinkCard } from '@astrojs/starlight/components';
+
+<a id="ide"></a>
+
+## Global options — setup and usage <Badge variant="tip" text="Added in 1.1.0" />
+
+SikuliX now has a basic implementation of a global options repository, that is recognized and loaded at startup time (IDE and API usage). At runtime, this options store can be accessed to get and set values. Persistence (save) and merge of additional options files is not yet supported.
+
+Since internally the options are stored in a Java Properties object as key-value-pairs in string representation, the options file must conform to the [applicable rules](<http://docs.oracle.com/javase/7/docs/api/java/util/Properties.html#load(java.io.Reader>)).
+
+### Where SikuliX looks for `SikulixOptions.txt`
+
+At startup these locations are searched in order — **first appearance wins**:
+
+<FileTree>
+- working folder/ ← checked first
+  - SikulixOptions.txt
+- user's home folder/
+  - SikulixOptions.txt
+- SikulixStore/ (inside the [Sikulix repository](#sikulixappdata))
+  - SikulixOptions.txt
+</FileTree>
+
+### Settings class overrides
+
+Options defined in the `Settings` class behave specially — see [Controlling Sikuli Scripts and their Behavior](/scripting/#controllingsikuliscriptsandtheirbehavior).
+
+Any `Settings.option = value` declaration in the options file will **overwrite** the existing option value in the `Settings` class at startup.
+
+### Other options recognised at startup
+
+<CardGrid>
+  <Card title="Debug.level = n" icon="seti:config">
+    Preferably `n` as `3`. Debug information is produced from the very beginning of startup.
+  </Card>
+  <Card title="Settings.OverwriteImages = yes" icon="seti:image">
+    When saving images in the IDE with a name that already exists, files are normally renamed with a `-n` suffix. With this option on (default: off), naming images with an existing name will **replace the file without notice**.
+  </Card>
+  <Card title="classpath = list of absolute-paths" icon="seti:java">
+    Appends the given paths to the end of the classpath in sequence. Same rules as Java classpath on that system — on Windows, backslashes must be doubled (escaped).
+
+    <Badge variant="caution" text="Up to 1.1.3 only" />
+  </Card>
+</CardGrid>
+
+<Aside type="tip" title="Successor in 2.0.0">
+  Since version 1.1.4 and 2.0.0+, see the [Extensions](/extensions/) feature, which supersedes this mechanism.
+</Aside>
+
+<a id="runonlyparts"></a>
+
+## Run only parts of a script <Badge variant="tip" text="Added in 2.0.0" />
+
+<Aside type="note">
+  Until noted, this feature is only available for **Jython scripting**.
+</Aside>
+
+By **right-clicking** on a line number the pop-up context menu lets you:
+
+<CardGrid>
+  <Card title="Run this line" icon="right-arrow">
+    Run only the line at this line number.
+  </Card>
+  <Card title="Run from top" icon="up-caret">
+    Run the script from the beginning up to and including this line.
+  </Card>
+  <Card title="Run to bottom" icon="down-caret">
+    Run the script from this line to the end.
+  </Card>
+  <Card title="Run selection" icon="pencil">
+    Run the snippet in the current selection — or this line if nothing is selected.
+  </Card>
+</CardGrid>
+
+The **Run menu** now contains the entry `Run selection` (`Shift+Ctrl/Cmd+R`), which also runs the current selection — or the line at the caret if nothing is selected. The advantage is the available shortcut, which saves additional mouse actions.
+
+<Aside type="caution" title="Jython gotcha">
+  If the first line of a selection has an indent, `if True:` is added as first line to make the snippet runnable.
+</Aside>
+
+This feature might be a neat replacement for the no-longer-available interactive mode from the commandline.
+
+<a id="editpython"></a>
+
+## Plain Python scripts — open, edit, save and run <Badge variant="tip" text="Added in 2.0.0" />
+
+<Aside type="note" title="Work in progress">
+  See the [related request bug](https://bugs.launchpad.net/sikuli/+bug/1818514) for status and discussion.
+</Aside>
+
+It is now possible to work with plain Python files in the IDE, which allows direct support of the classic Python style of scripts and folder structures (modules).
+
+- **Open and save `.py` files**
+- **Image handling in the `.py` context**
+- **Running `.py` files**
+
+<a id="edittext"></a>
+
+## Text files — open, edit and save <Badge variant="tip" text="Added in 2.0.0" />
+
+<Aside type="note" title="Work in progress" />
+
+### Special Sikulix text files
+
+<FileTree>
+- SikulixOptions.txt — global runtime options
+- extensions.txt — extension manifest
+- sites.txt — image search path roots
+</FileTree>
+
+## Where to next?
+
+<LinkCard
+  title="Controlling Sikuli Scripts and their Behavior"
+  href="/scripting/#controllingsikuliscriptsandtheirbehavior"
+  description="Configure script behavior via Settings, Debug, and runtime options."
+/>
+
+<LinkCard
+  title="Extensions feature"
+  href="/extensions/"
+  description="The 2.0.0 successor mechanism for plugging in new IDE capabilities."
+/>
+
+<LinkCard
+  title="Image Search Path"
+  href="/scripting/#imagesearchpath"
+  description="Where SikuliX looks for image files when your scripts run."
+/>

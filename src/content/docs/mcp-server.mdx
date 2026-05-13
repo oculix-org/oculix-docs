@@ -1,0 +1,437 @@
+---
+title: "OculiX MCP Server — lightweight remote control for visual automation"
+---
+
+import { Aside, Badge, Card, CardGrid } from '@astrojs/starlight/components';
+
+<Badge variant="tip" text="Oculix-specific" />
+
+The **OculiX MCP Server** is a small Java daemon that exposes Oculix's visual automation — template matching, OCR, mouse and keyboard control — as a **remote-callable API**. It is designed to be driven by external test runners, QA pipelines, internal tooling, and any other client that needs to control a screen from another process.
+
+Under the hood, the wire protocol is [Model Context Protocol](https://modelcontextprotocol.io/) — JSON-RPC over stdio or Streamable HTTP. We picked it because it is **noticeably lighter than the XML-RPC layer used by classic Robot Framework remote libraries** (`jrobotremoteserver` and the like). Less framing overhead, simpler client code, faster round-trips.
+
+The fact that MCP clients also exist on the LLM side (Claude Desktop, Cursor, the MCP Inspector) is a bonus, not the point. If you want to drive Oculix from an LLM you can; if you want to drive it from a Python test script or a Java service, you can too. The server does not know nor care which one is on the other end.
+
+## Boundary — what Oculix provides vs what you provide
+
+Oculix ships **security primitives**. It does **not** define your security policy. Read this before any deployment in a regulated environment, because the distinction matters legally and operationally.
+
+| Oculix provides (mechanism) | You provide (policy) |
+|---|---|
+| `ActionGate` interface called on every tool call | Concrete `ActionGate` implementation (auto-approve, queue, allowlist, ...) matching your threat model |
+| Cryptographically signed audit trail (Ed25519 + hash chain) | Where the journal is archived, who reviews it, how often, what counts as a violation, retention period |
+| Key rotation, session model, fail-fast on unsigned state | Rotation cadence, who is allowed to rotate, how revocation propagates to your other systems |
+| Open vs confidential modes | The decision of which mode is required for which use case, enforced at process-launch time by your own configuration management |
+| Refusal to fall back to unsigned mode (no silent degradation) | Monitoring that detects when the server is *not* running and alerts your on-call |
+| Loopback-only by default, TLS termination flag for upstream proxies | Reverse proxy config, certificate rotation, WAF rules, network segmentation |
+| No outbound traffic from the server itself | Outbound firewall rules on the host, allow/deny lists of LLM API endpoints, network isolation between the LLM host and the target screen host |
+
+Oculix can demonstrate that an action was taken, by whom, with what arguments. **Oculix cannot decide for your security team whether that action should have been allowed in the first place.** That decision belongs to your `ActionGate` implementation, your network policy, your compliance officer, and your regulator-facing review process — all of which are your responsibility.
+
+If you ship Oculix into a regulated environment without a non-trivial `ActionGate` implementation and a defined audit review process, you have not configured a secure system — you have configured an auditable one. The two are not the same, and conflating them is the source of most automation incidents.
+
+### LLM clients are opt-in, never default
+
+The server treats any LLM-backed client (the Claude API, OpenAI, Mistral, Gemini, on-prem Ollama / vLLM — any provider, hosted or local) as a category that **the deployer must explicitly enable through a validation mechanism** before such a client can drive the server. The default posture is *"a QA framework or a deterministic test runner is on the other end"*.
+
+This is independent of the LLM-agnosticism of the codebase (no provider SDK is bundled, no model-specific logic ships): that is a **build-time** property. The opt-in rule is a **runtime activation rule** that the deployer owns. A vanilla deployment refuses to negotiate with a client whose handshake identifies it as an LLM front-end; flipping that bit is a conscious operator decision tied to a documented policy, not an accidental side-effect of starting the daemon.
+
+The point is to make the LLM-driven case impossible by mistake. If you want it, you turn it on, with the configuration trail to prove it. If you do not, the server stays a plain QA backend regardless of what clients are running on the network.
+
+### Deployer attestation — turning activation into an audit entry
+
+For activations that materially change the server's security posture (enabling LLM clients, switching from `confidential` to `open` mode, deploying with `AutoApproveGate` in production, widening an allowlist), the server ships a **deployer attestation template**: a small structured form the operator fills before the feature can be activated.
+
+The template is not a legal NDA — Oculix has no contractual relationship with the deployer's organisation. It is an **internal attestation that the deployer issues to itself and to its own compliance function**, and that becomes part of the audit chain.
+
+Concretely:
+
+- The server provides a template (YAML/JSON) with required fields: operator identity, organisation, business justification, internal policy reference, target environment, expected duration, fallback path on revocation
+- The operator fills it locally before activation
+- The server validates the template at activation time and, if valid, writes the template's canonical hash and full contents as an `activation_acknowledged` entry, signed by the current audit key
+- Future verification (`oculix-mcp verify`) confirms the attestation entry alongside the operational tool calls; a missing or unsigned attestation for a sensitive mode is a verification failure
+- Rotating the audit key preserves the attestation: the entry chains across rotations like any other journal entry
+
+For a compliance officer, this turns "did anyone enable LLM clients in March?" into a deterministic offline check rather than a conversation. For an external regulator, it produces an evidence artefact tying a specific human, with a specific policy reference, to the activation timestamp.
+
+Implementation status: the activation slot exists in the audit schema; concrete templates and the per-feature attestation requirement are scoped for a near-term release. See [What is not in V1](#what-is-not-in-v1).
+
+## Why a remote-control daemon
+
+A SikuliX script written in the IDE drives the screen of the **same machine** it runs on. That is fine for desktop scripts, but a lot of real-world setups want one of these:
+
+- A **CI worker** triggers screen actions on a **dedicated automation VM** sitting on a different host.
+- A test harness on a developer laptop drives a **remote production-like terminal** over VNC.
+- A **legacy test framework** (Robot Framework, Squish-style scripts, internal shell harnesses) needs to call screen actions from outside the SikuliX JVM.
+- An **on-premise orchestration platform** schedules screen automations on pools of machines.
+
+All of these need the same thing: a stable, language-agnostic API to ask "click this image", "wait for this text", "screenshot this region", and get a result back.
+
+That is what `oculix-mcp-server` is.
+
+## What you can call
+
+The server registers nine tools by default. Each is invoked over the standard MCP `tools/call` method; arguments and return shape are described by the JSON schema returned by `tools/list`.
+
+| Tool | What it does |
+|---|---|
+| `oculix_find_image` | Locate a reference image on screen, return coordinates (non-blocking) |
+| `oculix_click_image` | Find a reference image and left-click it |
+| `oculix_exists_image` | Non-blocking presence check |
+| `oculix_wait_for_image` | Block until a reference image appears, up to a timeout |
+| `oculix_screenshot` | Capture the full screen or a region, return as base64 PNG |
+| `oculix_type_text` | Type literal text at the keyboard focus |
+| `oculix_key_combo` | Press a keyboard combination (Ctrl+C, Cmd+Tab, F5, ...) |
+| `oculix_find_text` | OCR: locate a text string on screen, return bounding box |
+| `oculix_read_text_in_region` | OCR: extract the text from a region — *open mode only* |
+
+In **confidential mode** (see below), the last two are replaced by `_to_disk` variants that keep pixels and text on the local host and return only a path and a SHA-256 hash.
+
+Each tool is a thin Java class in `MCP/src/main/java/org/sikuli/mcp/tools/`, wrapping the corresponding Oculix primitive (see [`Region`](/region/), [`Pattern`](/pattern/), [`Match`](/match/), [text and OCR](/textandocr/)).
+
+## Why MCP rather than XML-RPC
+
+If you already know `jrobotremoteserver` (the Java-side daemon used by community Sikuli libraries for Robot Framework), the comparison is straightforward.
+
+| | `jrobotremoteserver` (XML-RPC) | OculiX MCP Server (JSON-RPC) |
+|---|---|---|
+| Framing | Verbose XML envelopes | Compact JSON objects |
+| Transport | HTTP only | Stdio (no socket needed) or Streamable HTTP |
+| Per-call overhead | Higher | Lower |
+| Native client surface | Robot Framework Remote Library | Any MCP client *or* raw JSON-RPC |
+| Auth | App-specific | Layered: optional PAT + mandatory ephemeral bearer |
+| Session model | Stateless per call | Explicit session, revocable via `DELETE` |
+| Audit | Off the shelf: nothing | Ed25519 hash chain, signed per call, verifiable offline |
+
+The MCP server is a drop-in upgrade for the kind of remote-control workflow XML-RPC was carrying. The audit chain and session model are bonuses on top.
+
+Oculix is API-compatible with SikuliX: existing scripts and existing bindings (including Robot Framework setups using XML-RPC bridges) keep working unchanged. The MCP server is a separate, additional path — not a replacement.
+
+## Who can use this — and why it beats rolling your own
+
+The MCP server gives any framework or service that wants **visual recognition** a complete, audited, language-agnostic backend over a single JSON-RPC connection. Concretely:
+
+| If you... | The MCP server gives you... |
+|---|---|
+| Drive Selenium / Playwright / Cypress and bolt on OpenCV + Tesseract for visual asserts | A maintained engine with PaddleOCR + Tesseract fallback, exposed by 9 schema'd tools |
+| Have a homemade Python harness using `pyautogui` + `pytesseract` | A stable Java backend over JSON-RPC, with audit trail and session model out of the box |
+| Want to drive screens from a Java / Go / Rust / .NET service that has no SikuliX binding | Plain HTTP + JSON — no SDK, no JNI, no native build |
+| Build a new test framework or QA harness from scratch | A visual-recognition backend you don't have to write, so you can focus on your framework's ergonomics |
+| Run a regulated environment that needs proof of every UI action | Ed25519 signed journal verifiable offline, with `verify` subcommand |
+
+The point: rather than every framework re-implementing template matching, OCR plumbing, and result-shaping for the hundredth time, plug them all into the same `oculix-mcp-server` and call its nine tools. The framework keeps its native ergonomics (pytest fixtures, Playwright `expect`-style, Robot keywords); only the visual primitives are delegated to a single audited backend.
+
+## Quick start
+
+### 1. Build
+
+```bash
+mvn -pl MCP -am -DskipTests -Pmcp-fatjar clean package
+# produces MCP/target/oculix-mcp-server.jar
+```
+
+### 2. Run
+
+Stdio mode (one process, one client, no socket):
+
+```bash
+java -jar MCP/target/oculix-mcp-server.jar run
+```
+
+HTTP mode (multiple clients, addressable from outside the process):
+
+```bash
+java -jar MCP/target/oculix-mcp-server.jar serve
+#   → listening on http://127.0.0.1:7337/mcp
+```
+
+On first start, the server generates an Ed25519 key pair in `~/.oculix-mcp/` (private key mode `600`). Subsequent runs reuse that pair.
+
+### 3. Verify the audit trail
+
+```bash
+java -jar oculix-mcp-server.jar verify
+```
+
+Walks every `audit-*.jsonl` file in `~/.oculix-mcp/journal/`, re-computes hashes, verifies signatures, and checks chain continuity. Outputs `OK` / `FAIL` per file.
+
+## CLI subcommands
+
+```text
+oculix-mcp run                    Start over stdio (default)
+oculix-mcp serve [flags]          Start over HTTP (Streamable HTTP)
+                                  --host HOST   (default 127.0.0.1)
+                                  --port PORT   (default 7337, 0 for auto)
+                                  env OCULIX_MCP_TOKEN   optional client token
+                                  env OCULIX_MCP_MODE    open | confidential
+                                  env OCULIX_MCP_VAULT   confidential landing dir
+                                  env OCULIX_MCP_TRUST_TLS_TERMINATION=1
+                                                         acknowledge upstream TLS
+oculix-mcp rotate-key             Rotate the Ed25519 audit signing key
+oculix-mcp rotate-session-key     Rotate the HMAC keyring for session tokens
+oculix-mcp recover                Record an unsigned-gap and start a fresh chain
+oculix-mcp verify [FILES...]      Verify audit journals (all by default)
+oculix-mcp --help                 Show usage
+```
+
+## HTTP transport — calling the server from anywhere
+
+Once `serve` is running, any HTTP client can drive it.
+
+```bash
+java -jar MCP/target/oculix-mcp-server.jar serve
+#   → listening on http://127.0.0.1:7337/mcp
+#   → client token: DISABLED (any caller on loopback can initialize)
+
+# 1. initialize — returns Mcp-Session-Id (header) + bearer (body)
+RESP=$(curl -s -D /tmp/h.txt -X POST http://127.0.0.1:7337/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}')
+SID=$(grep -i mcp-session-id /tmp/h.txt | awk '{print $2}' | tr -d '\r')
+BEARER=$(echo "$RESP" | jq -r '.result._meta.bearer')
+
+# 2. tools/list
+curl -s -X POST http://127.0.0.1:7337/mcp \
+  -H "Mcp-Session-Id: $SID" \
+  -H "Authorization: Bearer $BEARER" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | jq
+
+# 3. call a tool
+curl -s -X POST http://127.0.0.1:7337/mcp \
+  -H "Mcp-Session-Id: $SID" \
+  -H "Authorization: Bearer $BEARER" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call",
+       "params":{"name":"oculix_click_image",
+                 "arguments":{"reference_path":"/tmp/button.png","similarity":0.85}}}' | jq
+
+# 4. DELETE — revoke the session
+curl -s -X DELETE http://127.0.0.1:7337/mcp \
+  -H "Mcp-Session-Id: $SID" \
+  -H "Authorization: Bearer $BEARER" -o /dev/null -w "%{http_code}\n"
+```
+
+No SDK needed — it's plain HTTP + JSON. Python `requests`, Go `net/http`, JS `fetch`, Java `HttpClient`, all work directly.
+
+### Auth model — two layers
+
+**Layer 1: client credential (optional, PAT-style).** Gates `initialize`. Configured via `OCULIX_MCP_TOKEN`. Unset → anyone on the bound interface can initialize, which is acceptable on loopback. Set it when exposing the server beyond localhost.
+
+**Layer 2: session token (mandatory, ephemeral).** Minted by the server on every successful `initialize`, returned in `result._meta.bearer`. Format:
+
+```text
+ocx.<kid>.<b64url(payload)>.<b64url(hmac)>
+```
+
+The client sends it back as `Authorization: Bearer <value>` on every subsequent request. Default TTL is 30 minutes; refresh by re-initializing.
+
+A leaked token **cannot** be replayed against a different session id; a token whose session was `DELETE`d is rejected with `404` even if still crypto-valid; key rotation leaves outstanding tokens valid until they expire naturally.
+
+### Session-token key rotation
+
+```bash
+oculix-mcp rotate-session-key
+#   Session-token keyring rotated.
+#     previous kid:  k9QwM7eL
+#     new kid:       kX3pT2aB
+#     ring size:     2
+```
+
+The HMAC keyring lives in `~/.oculix-mcp/session-hmac-keyring.json` (mode `0600`). Generating a new kid keeps old kids in the ring so already-issued tokens remain verifiable until they expire. Delete the file to force all outstanding sessions into hard failure.
+
+### TLS
+
+Plain HTTP on anything other than a loopback address is refused at startup. If TLS is terminated upstream (nginx, Caddy, service mesh, WAF), set `OCULIX_MCP_TRUST_TLS_TERMINATION=1` to acknowledge that responsibility before binding `--host 0.0.0.0` or a non-local interface. In-process TLS is planned but not shipped — use a reverse proxy for now; certificate rotation and WAF policy belong there anyway.
+
+### Concurrency
+
+Screen actions are serialized through a fair lock: no matter how many clients share one process, two `oculix_click_image` cannot interleave. This is independent of the transport.
+
+## Modes: open vs confidential
+
+By default, the server registers the 9 tools described above. Two of them return screen content over the wire:
+
+- `oculix_screenshot` — PNG bytes (base64) back to the caller.
+- `oculix_read_text_in_region` — OCR text back to the caller.
+
+For regulated workflows where captured content must **not** leave the host (banking screens, healthcare records, internal admin consoles), start the server in confidential mode:
+
+```bash
+OCULIX_MCP_MODE=confidential \
+OCULIX_MCP_TOKEN=... \
+  java -jar oculix-mcp-server.jar serve
+```
+
+In confidential mode the two content-bearing tools are **not registered**. The client's `tools/list` will not even mention them — there is no filter to bypass, the capability is physically absent. They are replaced by:
+
+- `oculix_screenshot_to_disk` — captures a PNG into the local vault, returns `{path, sha256, width, height, bytes}`. Pixels stay local.
+- `oculix_ocr_to_disk` — writes the OCR output to a text file in the vault, returns `{path, sha256, engine, line_count, char_count}`. Text stays local.
+
+Vault location: `$OCULIX_MCP_VAULT` if set, else `~/.oculix-mcp/vault/`, restricted to owner only (`0700` on POSIX).
+
+| Claim | Holds? |
+|---|---|
+| Screen pixels never leave the host via the MCP channel | yes |
+| OCR results never leave the host via the MCP channel | yes |
+| Local audit chain records SHA-256 of every captured artefact | yes |
+| The remote caller cannot enumerate content-bearing tools | yes — they are absent from `tools/list` |
+| Caller-supplied arguments (e.g. `type_text`) never leak | no — the caller is the one writing them |
+
+## Audit trail
+
+Every tool call produces a journal entry containing:
+
+- Timestamp (UTC, microsecond precision) plus a monotonic per-file sequence number
+- Session id (UUID)
+- Client name and version (from the MCP handshake)
+- Tool name and full arguments
+- SHA-256 hash of the result payload
+- `prev_hash` chaining to the previous entry
+- `entry_hash` of the entry itself
+- Ed25519 signature of `entry_hash`
+
+Rotation markers are signed by the outgoing key before a new key takes over, so the chain remains provable across key rotations. Deleting the private key manually triggers a fail-fast refusal on the next start — **the server never falls back to unsigned mode**.
+
+### Example entry
+
+```json
+{
+  "type": "tool_call",
+  "ts_utc": "2026-04-14T19:23:45.123456Z",
+  "seq": 42,
+  "session_id": "c4a1f8e0-3b20-4d6a-9b3f-1f6e4d6c8a11",
+  "client": { "name": "qa-runner-internal", "version": "2.4.1" },
+  "tool": "oculix_click_image",
+  "args": { "reference_path": "/tmp/button.png", "similarity": 0.85 },
+  "result_sha256": "3b1ab...",
+  "extra": null,
+  "prev_hash": "0000...",
+  "entry_hash": "f8c2...",
+  "signature": "a7e9..."
+}
+```
+
+Special entry types:
+
+- `rotation_end` / `rotation_begin` — pair of markers at key / file rotation
+- `clock_regression` — recorded when the wall clock regresses versus the monotonic reference (NTP sync going backward, VM pause)
+- `recovery_gap` — written by the `recover` subcommand as a separate file
+
+### Key rotation
+
+```bash
+oculix-mcp rotate-key
+```
+
+The command:
+
+1. Writes a `rotation_end` marker to the current journal, signed by the outgoing key. The marker includes the SHA-256 of the new public key so operators can anchor trust.
+2. Archives the outgoing key pair under `~/.oculix-mcp/archive/`.
+3. Generates and installs a new Ed25519 key pair.
+4. Writes a `rotation_begin` marker to a fresh journal, chained to the closing marker of the previous file.
+
+### Recovery (broken chain)
+
+If the private key is genuinely lost (disk failure, operator error) and the chain cannot be continued:
+
+```bash
+oculix-mcp recover
+```
+
+Writes an `UNSIGNED_GAP` marker and starts a fresh chain under a new key. The discontinuity is explicit and visible to `verify`.
+
+### Startup refusal states
+
+The server refuses to start in any of the following situations, with a clear message pointing at the recovery command:
+
+| Situation | Behaviour |
+|---|---|
+| No key pair, no journal history | Initialise normally |
+| No private key but journal history exists | **REFUSE** — run `recover` if intentional |
+| Inconsistent key state (only one of priv/pub present) | **REFUSE** — run `recover` |
+| Key pair present but unreadable / corrupted | **REFUSE** — restore from backup or `recover` |
+| Current key does not verify the last journal entry | **REFUSE** — use `rotate-key` properly, or `recover` |
+| Key pair present and consistent with journal | Start normally |
+
+Silent degradation is a security anti-pattern.
+
+## Air-gapped LLM autonomy — the legitimate path
+
+The combination most users will eventually ask about is "an LLM that drives our screens for QA". That use case is real, but the only configuration where it makes sense in a regulated environment is **fully on-prem**: an on-host LLM, the MCP server next to it, no outbound traffic toward any cloud LLM API.
+
+```text
+┌──────────────────────────┐       ┌──────────────────────────┐
+│ Host A (LLM)             │  RPC  │ Host B (target screen)   │
+│ - Mistral / Llama / etc. │◀─────▶│ - oculix-mcp-server      │
+│   on local GPU           │ priv  │ - the application under  │
+│ - no outbound Internet   │  net  │   test                   │
+└──────────────────────────┘       │ - no outbound Internet   │
+                                   └──────────────────────────┘
+        outbound firewall:                outbound firewall:
+        DENY api.anthropic.com            DENY *
+        DENY api.openai.com               (except localhost
+        DENY api.mistral.ai                paddleocr-server)
+        DENY *.googleapis.com
+```
+
+**What this configuration guarantees** end-to-end:
+
+- Screen pixels never leave the host network
+- OCR results never leave the host network
+- Tool arguments (typed text, key combos) never leave the host network
+- The audit chain stays on Host B, signed by a key whose private half also stays on Host B
+- No third-party logging of inferences (no Anthropic / OpenAI / Google audit logs to subpoena)
+
+**What it does *not* protect against** — these risks exist regardless of the LLM topology:
+
+- **Prompt injection via screen content.** If the target screen displays attacker-controlled text (a malicious email rendered in the app under test, a third-party SaaS panel embedding ads), an OCR call surfaces that text inside the LLM's context. Mitigate with `ActionGate` (see [What is not in V1](#what-is-not-in-v1)), an allowlist of clickable regions, and a hard cap on actions per session.
+- **OCR ambiguity.** Tesseract can read `Save` as `Send` on noisy fonts; OCR-driven click targets are not deterministic. Pair with image references for sensitive actions.
+- **Lateral motion within the host.** The LLM can drive any pixel on Host B's screen, not just the application under test. Run on a dedicated VM and segregate `OCULIX_MCP_VAULT` from the rest of the filesystem.
+- **CVEs in OCR engines.** Tesseract has had image-parser CVEs over the years. Pin the version, keep it patched.
+
+**Hardware cost — be honest about it.** Running a 70B-class open-weight model with usable latency and decent reasoning needs ~80 GB of GPU memory (a single H100, or two A100 80GB, or a Mac Studio M3 Ultra). Smaller models (7B–13B) run on a single consumer GPU but lose enough quality on long tool-use chains that they often aren't worth it for production QA. **This is the real cost of the air-gapped story** — it shifts spend from "API tokens at scale" to "one capable GPU in your DC". For a Tier 1 bank doing thousands of nightly UI tests, that math frequently wins. For a small QA team with a handful of sessions per day, the cloud API + confidential mode + outbound-firewall combo may be cheaper. Both are valid; pick consciously.
+
+## Cloud LLM clients (Claude Desktop, Cursor, MCP Inspector) — for development only
+
+The server speaks MCP, so any MCP client can connect to it during development — Claude Desktop, Cursor, the MCP Inspector. This is useful to iterate on prompts and to debug tool schemas. **It is not a deployment configuration for any regulated environment**, because every tool argument and (in open mode) every screenshot or OCR result is sent to the LLM provider's API.
+
+```json
+{
+  "mcpServers": {
+    "oculix": {
+      "command": "java",
+      "args": ["-jar", "/absolute/path/to/oculix-mcp-server.jar", "run"]
+    }
+  }
+}
+```
+
+The server itself is LLM-agnostic by construction:
+
+- No Anthropic SDK, no OpenAI SDK
+- No model-specific prompt engineering
+- The `_meta.llm` fields in the audit trail are populated only if the client passes them — left null otherwise
+
+<Aside type="caution" title="Treat cloud LLM clients as dev-only">
+
+When the MCP client is a cloud LLM, every tool argument (and in open mode, every screenshot and OCR result) reaches the LLM provider's API. **Do not point a cloud LLM client at the MCP server on a host that has access to anything sensitive.** Use a sandboxed VM with a test dataset, and switch to the on-prem topology above before going near production.
+
+</Aside>
+
+## What is in the jar
+
+`oculix-mcp-server.jar` is a fat jar (`java -jar` runnable):
+
+- **Apertix / OpenCV 4.10 natives**: bundled for Windows x86_64, Linux x86_64, macOS x64/aarch64. Template matching works out of the box.
+- **Tesseract natives for Linux and macOS**: NOT bundled (see [oculix-org/oculix#110](https://github.com/oculix-org/Oculix/issues/110)). Install Tesseract via your system package manager. On Windows, `tess4j` ships the natives so no extra install is needed.
+- **PaddleOCR**: runs as a separate Python microservice (`paddleocr-server`, Flask). The MCP server talks to it via HTTP on `127.0.0.1:5000` by default. If PaddleOCR is not reachable, the server falls back to Tesseract transparently.
+
+## What is not in V1
+
+- **Human-in-the-loop approval**: the `ActionGate` interface exists and is called for every tool call, but the default `AutoApproveGate` always approves. A queue-and-notify implementation can plug into the same interface for per-action operator approval.
+- **Deployer attestation templates**: the audit schema reserves an `activation_acknowledged` entry type for posture-changing activations; concrete templates (LLM clients, mode switch, wide allowlist) and the per-feature enforcement are scoped for a near-term release.
+- **Multi-monitor region selection**: the `screen` field exists in the region schema but defaults to 0. Full multi-screen UX is scoped for later.
+- **Server-initiated SSE notifications**: the `GET /mcp` stream is kept open but no notifications are pushed yet. Inspector treats the stream as "ready" and continues; adding progress events is a later enhancement.
+
+License: MIT, same as OculiX.

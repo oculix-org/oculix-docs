@@ -1,0 +1,218 @@
+[
+  {
+    "label": "How SikuliX works",
+    "collapsed": true,
+    "items": [
+      {
+        "label": "SikuliX - the basics",
+        "slug": "basicinfo"
+      }
+    ]
+  },
+  {
+    "label": "Oculix-specific",
+    "collapsed": true,
+    "items": [
+      {
+        "label": "OculiX MCP Server — lightweight remote control for visual automation",
+        "slug": "mcp-server"
+      }
+    ]
+  },
+  {
+    "label": "Scripting & Usage",
+    "collapsed": true,
+    "items": [
+      {
+        "label": "SikuliX - general aspects of scripting",
+        "slug": "scenarios"
+      }
+    ]
+  },
+  {
+    "label": "SikuliX IDE",
+    "collapsed": true,
+    "items": [
+      {
+        "label": "Basic information and quick start",
+        "slug": "ide"
+      }
+    ]
+  },
+  {
+    "label": "SikuliX API for scripting and Java programming",
+    "collapsed": true,
+    "items": [
+      {
+        "label": "General features regarding scripting and image handling",
+        "slug": "scripting"
+      },
+      {
+        "label": "Interacting with the User and other Applications",
+        "slug": "interaction"
+      },
+      {
+        "label": "General Settings and Access to Environment Information",
+        "slug": "globals"
+      },
+      {
+        "label": "Region (rectangular pixel area on a screen)",
+        "slug": "region"
+      },
+      {
+        "label": "Location",
+        "slug": "location"
+      },
+      {
+        "label": "Screen",
+        "slug": "screen"
+      },
+      {
+        "label": "Pattern",
+        "slug": "pattern"
+      },
+      {
+        "label": "Match",
+        "slug": "match"
+      },
+      {
+        "label": "Finder",
+        "slug": "finder"
+      },
+      {
+        "label": "Key Constants",
+        "slug": "keys"
+      },
+      {
+        "label": "The Application Class (App)",
+        "slug": "appclass"
+      },
+      {
+        "label": "Working with text and using OCR features",
+        "slug": "textandocr"
+      }
+    ]
+  },
+  {
+    "label": "Miscellaneous",
+    "collapsed": true,
+    "items": [
+      {
+        "label": "Can I do X or Y or Z in SikuliX?",
+        "slug": "faq/000-can-i-do-xxx"
+      },
+      {
+        "label": "How to run SikuliX from Command Line",
+        "slug": "faq/010-command-line"
+      },
+      {
+        "label": "How to use SikuliX API in your JAVA programs or Java aware scripting",
+        "slug": "faq/030-java-dev"
+      },
+      {
+        "label": "Extensions",
+        "slug": "extensions"
+      },
+      {
+        "label": "General Information About Sikuli Extensions",
+        "slug": "extensions/extensions_info"
+      },
+      {
+        "label": "Sikuli Guide",
+        "slug": "extensions/sikuli-guide"
+      }
+    ]
+  },
+  {
+    "label": "Tutorials",
+    "collapsed": true,
+    "items": [
+      {
+        "label": "Hello World (Mac)",
+        "slug": "tutorials/helloworld/helloworld-mac"
+      },
+      {
+        "label": "Hello World (Windows)",
+        "slug": "tutorials/helloworld/helloworld-win"
+      },
+      {
+        "label": "Goodbye Trash (Mac)",
+        "slug": "tutorials/goodbyetrash/goodbyetrash"
+      },
+      {
+        "label": "Uncheck All Checkboxes",
+        "slug": "tutorials/uncheckall/uncheckall"
+      },
+      {
+        "label": "Check the Right Checkbox",
+        "slug": "tutorials/checkone/checkone"
+      },
+      {
+        "label": "Working with Sliders",
+        "slug": "tutorials/sliders/sliders"
+      },
+      {
+        "label": "Desktop Surveillance",
+        "slug": "tutorials/surveillance/surveillance"
+      },
+      {
+        "label": "Resizing a Window",
+        "slug": "tutorials/resize/resize"
+      },
+      {
+        "label": "Working with masked images (ignoring parts of the image) # 1.1.4",
+        "slug": "tutorials/masking/masking"
+      }
+    ]
+  },
+  {
+    "label": "For Developers",
+    "collapsed": true,
+    "items": [
+      {
+        "label": "How Sikuli Works",
+        "slug": "devs/system-design"
+      },
+      {
+        "label": "How to get involved",
+        "slug": "contributing"
+      }
+    ]
+  },
+  {
+    "label": "News & Updates",
+    "collapsed": true,
+    "items": [
+      {
+        "label": "What is new in SikuliX",
+        "slug": "new-in-sikulix"
+      },
+      {
+        "label": "Version 1.1.0 - Major changes and new features",
+        "slug": "apinews"
+      },
+      {
+        "label": "New or revised in version 2.0.2",
+        "slug": "news"
+      },
+      {
+        "label": "Version 2.0.2 - Bugs, known Problems, requests and possible workarounds",
+        "slug": "newsbugs"
+      },
+      {
+        "label": "Version 2.0.2+ - Special for Linux people",
+        "slug": "newslinux"
+      }
+    ]
+  },
+  {
+    "label": "Guides",
+    "collapsed": true,
+    "items": [
+      {
+        "label": "Best Practices, tipps an hints",
+        "slug": "best-practice"
+      }
+    ]
+  }
+]

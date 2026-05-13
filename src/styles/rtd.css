@@ -1,0 +1,246 @@
+/*
+ * Sphinxdoc / SikuliX RTD-inspired look for Starlight.
+ *
+ * Goals:
+ *  - charcoal header bar
+ *  - clean white body, neutral text
+ *  - discreet orange accents (links, current sidebar item)
+ *  - beige / cream callouts (asides) like sphinxdoc's "Note" boxes
+ *  - tighter heading scale — Starlight defaults are too large for a
+ *    dense reference doc
+ */
+
+:root {
+	/* Header / nav bar — Oculix orange-brown, light text */
+	--sl-color-bg-nav: #7d3c12;
+	--sl-color-text-nav: #ffefe0;
+	--sl-color-text-nav-hover: #ffffff;
+
+	/* Body — pure white background, near-black text */
+	--sl-color-bg: #ffffff;
+	--sl-color-bg-sidebar: #ffffff;
+	--sl-color-text: #1f1f1f;
+	--sl-color-text-invert: #ffffff;
+	--sl-color-text-accent: #c46010;
+
+	/* Accent — sphinxdoc / SikuliX orange */
+	--sl-color-accent: #c46010;
+	--sl-color-accent-low: #ffe4cc;
+	--sl-color-accent-high: #8a3f06;
+
+	/* Sidebar borders + subtle backgrounds */
+	--sl-color-hairline: #e0e0e0;
+	--sl-color-hairline-shade: #c8c8c8;
+	--sl-color-hairline-light: #ededed;
+
+	/* Tighter heading scale */
+	--sl-text-h1: 1.75rem;
+	--sl-text-h2: 1.35rem;
+	--sl-text-h3: 1.15rem;
+	--sl-text-h4: 1rem;
+	--sl-text-h5: 0.95rem;
+}
+
+/* Force the light look in dark-mode preference too — RTD docs are
+   traditionally light-only. Users who want dark mode get nothing here. */
+:root[data-theme='dark'] {
+	--sl-color-bg-nav: #2c2c2c;
+	--sl-color-text-nav: #f0f0f0;
+	--sl-color-bg: #ffffff;
+	--sl-color-bg-sidebar: #ffffff;
+	--sl-color-text: #1f1f1f;
+	--sl-color-text-accent: #c46010;
+	--sl-color-accent: #c46010;
+	--sl-color-accent-low: #ffe4cc;
+	--sl-color-accent-high: #8a3f06;
+	--sl-color-hairline: #e0e0e0;
+	--sl-color-hairline-shade: #c8c8c8;
+}
+
+/* Heading family — slightly more serif-leaning for the section titles,
+   keeping body font intact. Matches sphinxdoc better than Starlight's
+   default sans. */
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.sl-markdown-content h3 {
+	font-weight: 600;
+	letter-spacing: -0.005em;
+	margin-top: 1.6em;
+	margin-bottom: 0.6em;
+}
+
+.sl-markdown-content h1 {
+	border-bottom: 1px solid var(--sl-color-hairline);
+	padding-bottom: 0.3em;
+}
+
+.sl-markdown-content h4 {
+	font-weight: 600;
+	margin-top: 1.2em;
+	margin-bottom: 0.3em;
+}
+
+/* Links — sphinxdoc style: bluish-grey, underline on hover */
+.sl-markdown-content a:not(.not-content) {
+	color: #355f7c;
+	text-decoration: none;
+}
+.sl-markdown-content a:not(.not-content):hover {
+	color: var(--sl-color-accent);
+	text-decoration: underline;
+}
+
+/* Inline code — light grey background like sphinxdoc */
+.sl-markdown-content :not(pre) > code {
+	background: #f4f4f4;
+	border: 1px solid #e0e0e0;
+	color: #c0392b;
+	border-radius: 3px;
+	padding: 0.1em 0.3em;
+	font-size: 0.92em;
+}
+
+/* Aside / Note boxes — cream background, orange left rail */
+.sl-markdown-content .starlight-aside {
+	background: #fff8dc;
+	border: 1px solid #f0d680;
+	border-left: 4px solid var(--sl-color-accent);
+	border-radius: 4px;
+	padding: 0.75em 1em;
+	color: #3a2a00;
+}
+.sl-markdown-content .starlight-aside--tip {
+	background: #f0f9ff;
+	border-color: #c8e0f0;
+	border-left-color: #2980b9;
+}
+.sl-markdown-content .starlight-aside--caution {
+	background: #fff4e5;
+	border-color: #f0c890;
+	border-left-color: #c46010;
+}
+.sl-markdown-content .starlight-aside--danger {
+	background: #ffecec;
+	border-color: #f0a8a8;
+	border-left-color: #b22222;
+}
+.sl-markdown-content .starlight-aside__title {
+	font-weight: 600;
+	color: inherit;
+}
+
+/* Tables — sober, grey grid lines, real cell padding */
+.sl-markdown-content table {
+	border-collapse: collapse;
+	margin: 1em 0;
+}
+.sl-markdown-content table th,
+.sl-markdown-content table td {
+	border: 1px solid #d0d0d0;
+	padding: 0.5em 0.85em;
+	vertical-align: top;
+	text-align: left;
+	line-height: 1.45;
+}
+.sl-markdown-content table th {
+	background: #f4f4f4;
+	font-weight: 600;
+}
+.sl-markdown-content table tr:nth-child(even) td {
+	background: #fafafa;
+}
+
+/* Top nav bar — force every control to stay legible on the orange-brown
+   bar. We hard-code the colour here (not via the variable) so the
+   value survives Astro view-transitions: when the new page mounts,
+   the CSS variable is briefly reset before our :root rule re-applies,
+   which causes a noticeable black flash. A literal value on
+   `header.header` is timing-insensitive. */
+header.header {
+	background-color: #7d3c12;
+	color: #ffefe0;
+	border-bottom: 1px solid #5a2c10;
+}
+header.header a,
+header.header button,
+header.header .site-title,
+header.header [class*='SocialIcons'],
+header.header [class*='ThemeSelect'] {
+	color: var(--sl-color-text-nav);
+}
+header.header a:hover,
+header.header button:hover {
+	color: var(--sl-color-text-nav-hover);
+}
+header.header svg {
+	color: var(--sl-color-text-nav);
+	fill: currentColor;
+}
+
+/* Search trigger in the top bar — light pill, light text inside, even at rest */
+header.header [data-open-modal] {
+	background: rgba(255, 255, 255, 0.1);
+	border: 1px solid rgba(255, 255, 255, 0.25);
+	color: var(--sl-color-text-nav);
+}
+/* force every child of the search button (span "Search", kbd, svg) to
+   inherit the light nav color, overriding the default greys */
+header.header [data-open-modal],
+header.header [data-open-modal] *,
+header.header [data-open-modal] kbd {
+	color: var(--sl-color-text-nav);
+}
+header.header [data-open-modal] kbd {
+	background: rgba(255, 255, 255, 0.15);
+	border: 1px solid rgba(255, 255, 255, 0.3);
+}
+header.header [data-open-modal]:hover {
+	background: rgba(255, 255, 255, 0.18);
+}
+
+/* The full-screen search dialog (opens on Ctrl+K) still uses light theme
+   tokens inside — leave it alone, but force its own input visible */
+header.header dialog input[type='search'] {
+	color: #1f1f1f;
+}
+
+/* Theme selector (<starlight-theme-select> hosts a <label> + <select>) —
+   without explicit color the <select>'s `color: currentColor` falls back
+   to the page's body text colour (near-black) on top of our charcoal
+   bar, so the trigger button reads as illegible black-on-black. */
+header.header starlight-theme-select,
+header.header starlight-theme-select label,
+header.header starlight-theme-select select {
+	color: var(--sl-color-text-nav);
+}
+header.header starlight-theme-select select {
+	background: rgba(255, 255, 255, 0.1);
+	border: 1px solid rgba(255, 255, 255, 0.25);
+}
+/* <option> elements are styled by the OS popup, force a light look so they
+   are readable when the popup opens against the dark bar */
+header.header starlight-theme-select option {
+	background: #ffffff;
+	color: #1f1f1f;
+}
+
+/* Social icons (GitHub etc.) — render in nav text color */
+header.header .social-icons a,
+header.header .social-icons svg {
+	color: var(--sl-color-text-nav);
+}
+header.header .social-icons a:hover {
+	color: var(--sl-color-text-nav-hover);
+}
+
+/* Sidebar — neutral, current item in orange */
+.sidebar-pane {
+	background: #fafafa;
+	border-right: 1px solid var(--sl-color-hairline);
+}
+.sidebar-content a[aria-current='page'] {
+	background: var(--sl-color-accent-low);
+	color: var(--sl-color-accent-high);
+	font-weight: 600;
+	border-left: 3px solid var(--sl-color-accent);
+}

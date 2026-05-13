@@ -1,0 +1,22 @@
+---
+// Override of Starlight's built-in Header component.
+//
+// We wrap the default Header inside a `<div transition:persist>` so the
+// orange-brown nav bar is NOT torn down and re-rendered on every Astro
+// view transition. Without this, the new page mounts a fresh <header>
+// for a fraction of a second before our CSS reapplies, which produces
+// a visible black flash on each page navigation.
+import Default from '@astrojs/starlight/components/Header.astro';
+---
+
+<div transition:persist="oculix-header" class="oculix-header-persist">
+  <Default {...Astro.props} />
+</div>
+
+<style is:global>
+  .oculix-header-persist {
+    position: sticky;
+    top: 0;
+    z-index: var(--sl-z-index-navbar, 50);
+  }
+</style>
